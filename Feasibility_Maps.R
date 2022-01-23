@@ -31,9 +31,9 @@ sppDb <- dbPool(
   password = Sys.getenv("BCGOV_PWD")
 )
 
-X <- raster("BC_Raster.tif")
-X <- raster::setValues(X,NA)
-outline <- st_read(con,query = "select * from bc_outline")
+# X <- raster("BC_Raster.tif")
+# X <- raster::setValues(X,NA)
+# outline <- st_read(con,query = "select * from bc_outline")
 S1 <- setDT(dbGetQuery(sppDb,"select bgc,ss_nospace,spp,newfeas from feasorig"))
 setnames(S1,c("BGC","SS_NoSpace","Spp","Feasible"))
 
@@ -77,8 +77,10 @@ ccissMap <- function(SSPred,suit,spp_select){
 
 
 ################### straight predicted feasibility maps #####################
-feasCols <- data.table(Feas = c(1,2,3,4,5),Col = c("limegreen", "deepskyblue", "gold", "grey","grey"))
-area <- st_read("~/Downloads/ReburnBC_StudySite1")
+##feasCols <- data.table(Feas = c(1,2,3,4,5),Col = c("limegreen", "deepskyblue", "gold", "grey","grey"))
+
+##create raster for custom study area
+area <- st_read("~/Downloads/ReburnBC_StudySite1")##load in outline
 area <- st_zm(area)
 X <- raster(area, resolution = 400)
 values(X) <- 1:ncell(X)
@@ -87,6 +89,10 @@ hexPts <- st_crop(hexPts, st_bbox(X))
 ids <- raster::extract(X, hexPts)
 cw_table <- data.table(SiteNo = hexPts$siteno,RastID = ids)
 cw_table <- unique(cw_table, by = "RastID")
+
+##or load in pre-created data
+X <- raster("./inputs/RasterTemplate.tif")
+cw_table <- fread("./inputs/BurnCrosswalk.csv")
 
 ##gcm and rcp weight
 gcm_weight <- data.table(gcm = c("ACCESS-ESM1-5", "BCC-CSM2-MR", "CanESM5", "CNRM-ESM2-1", "EC-Earth3",
