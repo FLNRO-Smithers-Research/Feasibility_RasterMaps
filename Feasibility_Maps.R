@@ -1,15 +1,15 @@
-## spatial climates
+##script to create raster feasibility maps of cciss projections for custom area
+##Kiri Daust, Will MacKenzie, 2022
+
+##you will need to install the ccissdev package before proceeding:
+##remotes::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
+
 library(data.table)
-library(sf)
-library(RPostgreSQL)
 library(dplyr)
 library(foreach)
-library(rmapshaper)
-library(tictoc)
-library(rasterVis)
 library(raster)
 library(ccissdev)
-library(RPostgreSQL)
+library(RPostgres)
 library(sf)
 library(pool)
 
@@ -31,16 +31,11 @@ sppDb <- dbPool(
   password = Sys.getenv("BCGOV_PWD")
 )
 
-# X <- raster("BC_Raster.tif")
-# X <- raster::setValues(X,NA)
-# outline <- st_read(con,query = "select * from bc_outline")
 S1 <- setDT(dbGetQuery(sppDb,"select bgc,ss_nospace,spp,newfeas from feasorig"))
 setnames(S1,c("BGC","SS_NoSpace","Spp","Feasible"))
 
 ##adapted feasibility function
 ccissMap <- function(SSPred,suit,spp_select){
-  ### generate raw feasibility ratios
-  
   suit <- suit[Spp == spp_select,.(BGC,SS_NoSpace,Spp,Feasible)]
   suit <- unique(suit)
   suit <- na.omit(suit)
@@ -84,15 +79,20 @@ area <- st_read("~/Downloads/ReburnBC_StudySite1")##load in outline
 area <- st_zm(area)
 X <- raster(area, resolution = 400)
 values(X) <- 1:ncell(X)
-hexPts <- st_read("~/BC_HexGrid/BC_HexPoints400m.gpkg")
-hexPts <- st_crop(hexPts, st_bbox(X))
+
+##select hex points from database in bounding box
+bbox <- st_as_sfc(st_bbox(area))
+q1 <- paste0("select * from hex_points
+where ST_Intersects(geom, '",st_as_text(bbox,EWKT = T),"');")
+hexPts <- st_read(con, query = q1)
+
 ids <- raster::extract(X, hexPts)
 cw_table <- data.table(SiteNo = hexPts$siteno,RastID = ids)
 cw_table <- unique(cw_table, by = "RastID")
 
 ##or load in pre-created data
-X <- raster("./inputs/RasterTemplate.tif")
-cw_table <- fread("./inputs/BurnCrosswalk.csv")
+# X <- raster("./inputs/RasterTemplate.tif")
+# cw_table <- fread("./inputs/BurnCrosswalk.csv")
 
 ##gcm and rcp weight
 gcm_weight <- data.table(gcm = c("ACCESS-ESM1-5", "BCC-CSM2-MR", "CanESM5", "CNRM-ESM2-1", "EC-Earth3",
@@ -109,7 +109,7 @@ all_weight[rcp_weight,wrcp := i.weight, on = "rcp"]
 all_weight[,weight := wgcm*wrcp]
 modWeights <- all_weight
 
-dat <- dbGetCCISS(con, cw_table$SiteNo, avg = F, modWeights = all_weight)
+dat <- dbGetCCISS(con, cw_table$SiteNo, avg = F, modWeights = all_weight) ##takes about 1 min
 dat[,SiteRef := as.integer(SiteRef)]
 timeperiods <- c("1961","2041","2081")
 edaPos <- c("B2", "C4", "D6")
