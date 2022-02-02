@@ -2,7 +2,7 @@
 ##Kiri Daust, Will MacKenzie, 2022
 
 ##you will need to install the ccissdev package before proceeding:
-##remotes::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
+remotes::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
 
 library(data.table)
 library(dplyr)
@@ -13,7 +13,7 @@ library(RPostgres)
 library(sf)
 library(pool)
 
-##some setup
+##some setup to access the postgrs data on DigitalOcean
 con <- dbPool(
   drv = RPostgres::Postgres(),
   dbname = Sys.getenv("BCGOV_DB"),
@@ -35,6 +35,7 @@ S1 <- setDT(dbGetQuery(sppDb,"select bgc,ss_nospace,spp,newfeas from feasorig"))
 setnames(S1,c("BGC","SS_NoSpace","Spp","Feasible"))
 
 ##adapted feasibility function
+### inputs are the predicted site series, xx, and user selected species
 ccissMap <- function(SSPred,suit,spp_select){
   suit <- suit[Spp == spp_select,.(BGC,SS_NoSpace,Spp,Feasible)]
   suit <- unique(suit)
@@ -71,7 +72,7 @@ ccissMap <- function(SSPred,suit,spp_select){
 }
 
 
-################### straight predicted feasibility maps #####################
+################### produces straight predicted feasibility maps by species by edatopic position #####################
 ##feasCols <- data.table(Feas = c(1,2,3,4,5),Col = c("limegreen", "deepskyblue", "gold", "grey","grey"))
 
 ##create raster for custom study area
@@ -94,14 +95,14 @@ cw_table <- unique(cw_table, by = "RastID")
 # X <- raster("./inputs/RasterTemplate.tif")
 # cw_table <- fread("./inputs/BurnCrosswalk.csv")
 
-##gcm and rcp weight
+##gcm and rcp weighting. weight list in order of variable list
 gcm_weight <- data.table(gcm = c("ACCESS-ESM1-5", "BCC-CSM2-MR", "CanESM5", "CNRM-ESM2-1", "EC-Earth3",
                                  "GFDL-ESM4", "GISS-E2-1-G", "INM-CM5-0", "IPSL-CM6A-LR", "MIROC6",
                                  "MPI-ESM1-2-HR", "MRI-ESM2-0", "UKESM1-0-LL"),
                          weight = c(0,0,0,1,1,0,0,0,0,0,0,1,0))
 #weight = c(1,1,0,0,1,1,1,0,1,1,1,1,0))
 rcp_weight <- data.table(rcp = c("ssp126","ssp245","ssp370","ssp585"),
-                         weight = c(0,1,1,0))
+                         weight = c(0.8,1,0.8,0))
 
 all_weight <- as.data.table(expand.grid(gcm = gcm_weight$gcm,rcp = rcp_weight$rcp))
 all_weight[gcm_weight,wgcm := i.weight, on = "gcm"]
