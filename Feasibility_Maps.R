@@ -2,7 +2,11 @@
 ##Kiri Daust, Will MacKenzie, 2022
 
 ##you will need to install the ccissdev package before proceeding:
+<<<<<<< HEAD
 remotes::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
+=======
+devtools::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
+>>>>>>> 2c5ab59ee19728fd32565240acb9441e9addafbe
 
 library(data.table)
 library(dplyr)
