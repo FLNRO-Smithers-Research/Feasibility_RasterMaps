@@ -113,9 +113,10 @@ modWeights <- all_weight
 
 dat <- dbGetCCISS(con, cw_table$SiteNo, avg = F, modWeights = all_weight) ##takes about 1 min
 dat[,SiteRef := as.integer(SiteRef)]
-timeperiods <- c("1961","2041","2081")
+## choose time periods (1961, and 1991 are 30-year periods, 2021 and on are the starting year of 20 year-periods), edatopic positions and species to use
+timeperiods <- c("1961","2041","2081") ##"1991", "2021", "2061"
 edaPos <- c("B2", "C4", "D6")
-species <- c("Fd", "Sx", "Pl", "Bl", "Py", "Lw", "At")
+species <- c("Fd", "Sx", "Pl", "Bl", "Py", "Lw", "At") # These are BC forest service codes for species. See spreadsheet for interpretation and other codes
 
 for(tp in timeperiods){
   datTP <- dat[FuturePeriod == tp,]
@@ -127,7 +128,7 @@ for(tp in timeperiods){
     edaZonal <- edaTemp[(HasPos),]
     edaZonal[,HasPos := NULL]
     ##edatopic overlap
-    SSPreds <- edatopicOverlap(datTP,edaZonal,E1_Phase,onlyRegular = TRUE) ##takes about 30 seconds
+    SSPreds <- edatopicOverlap(datTP,edaZonal,E1_Phase,onlyRegular = TRUE) ##takes about 30 seconds to create the Site series equivalents to use.
     ##loop through species
     for(spp in species){
       sppFeas <- ccissMap(SSPreds,S1,spp) ##~ 15 seconds
@@ -137,6 +138,7 @@ for(tp in timeperiods){
       sppFeas <- sppFeas[,.(RastID,NewSuit)]
       X <- raster::setValues(X,NA)
       X[sppFeas$RastID] <- sppFeas$NewSuit
+      ### output feasibility raster file for each species-edatopic combination in list. This will be the feasibility averaged across all model-scenarios weighted as above.
       writeRaster(X, filename = paste("./ReburnBC_Maps/CCISSFeas",tp,eda,spp,".tif",sep = "_"),format = "GTiff", overwrite = T)
       # X2 <- ratify(X)
       # rat <- as.data.table(levels(X2)[[1]])
