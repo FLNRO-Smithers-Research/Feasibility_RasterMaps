@@ -40,8 +40,7 @@ setnames(S1,c("BGC","SS_NoSpace","Spp","Feasible"))
 ##adapted feasibility function
 ccissMap <- function(SSPred,suit,spp_select){
   ### generate raw feasibility ratios
-  
-  suit <- suit[Spp == spp_select,.(BGC,SS_NoSpace,Spp,Feasible)]
+    suit <- suit[Spp == spp_select,.(BGC,SS_NoSpace,Spp,Feasible)]
   suit <- unique(suit)
   suit <- na.omit(suit)
   SSPred <- SSPred[,.(SiteRef,FuturePeriod,BGC,SS_NoSpace,SS.pred,SSprob)]
@@ -78,7 +77,7 @@ ccissMap <- function(SSPred,suit,spp_select){
 
 ################### straight predicted feasibility maps #####################
 feasCols <- data.table(Feas = c(1,2,3,4,5),Col = c("limegreen", "deepskyblue", "gold", "grey","grey"))
-area <- st_read("~/Downloads/ReburnBC_StudySite1")
+area <- st_read("./AOI/ReburnBC_StudySite1.shp")
 area <- st_zm(area)
 X <- raster(area, resolution = 400)
 values(X) <- 1:ncell(X)
