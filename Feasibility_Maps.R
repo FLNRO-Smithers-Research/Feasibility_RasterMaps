@@ -1,19 +1,20 @@
-## spatial climates
+##script to create raster feasibility maps of cciss projections for custom area
+##Kiri Daust, Will MacKenzie, 2022
+
+##you will need to install the ccissdev package before proceeding:
+####remotes::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
+#devtools::install_github('FLNRO-Smithers-Research/CCISS_ShinyApp_v12')
+
 library(data.table)
-library(sf)
-library(RPostgreSQL)
 library(dplyr)
 library(foreach)
-library(rmapshaper)
-library(tictoc)
-library(rasterVis)
 library(raster)
 library(ccissdev)
-library(RPostgreSQL)
+library(RPostgres)
 library(sf)
 library(pool)
 
-##some setup
+##some setup to access the postgrs data on Digital Ocean servers
 con <- dbPool(
   drv = RPostgres::Postgres(),
   dbname = Sys.getenv("BCGOV_DB"),
@@ -31,13 +32,11 @@ sppDb <- dbPool(
   password = Sys.getenv("BCGOV_PWD")
 )
 
-X <- raster("BC_Raster.tif")
-X <- raster::setValues(X,NA)
-outline <- st_read(con,query = "select * from bc_outline")
 S1 <- setDT(dbGetQuery(sppDb,"select bgc,ss_nospace,spp,newfeas from feasorig"))
 setnames(S1,c("BGC","SS_NoSpace","Spp","Feasible"))
 
 ##adapted feasibility function
+### inputs are the predicted site series, xx, and user selected species
 ccissMap <- function(SSPred,suit,spp_select){
   ### generate raw feasibility ratios
     suit <- suit[Spp == spp_select,.(BGC,SS_NoSpace,Spp,Feasible)]
@@ -75,26 +74,37 @@ ccissMap <- function(SSPred,suit,spp_select){
 }
 
 
+
 ################### straight predicted feasibility maps #####################
 feasCols <- data.table(Feas = c(1,2,3,4,5),Col = c("limegreen", "deepskyblue", "gold", "grey","grey"))
 area <- st_read("./AOI/ReburnBC_StudySite1.shp")
+
 area <- st_zm(area)
 X <- raster(area, resolution = 400)
 values(X) <- 1:ncell(X)
-hexPts <- st_read("~/BC_HexGrid/BC_HexPoints400m.gpkg")
-hexPts <- st_crop(hexPts, st_bbox(X))
+
+##select hex points from database in bounding box
+bbox <- st_as_sfc(st_bbox(area))
+q1 <- paste0("select * from hex_points
+where ST_Intersects(geom, '",st_as_text(bbox,EWKT = T),"');")
+hexPts <- st_read(con, query = q1)
+
 ids <- raster::extract(X, hexPts)
 cw_table <- data.table(SiteNo = hexPts$siteno,RastID = ids)
 cw_table <- unique(cw_table, by = "RastID")
 
-##gcm and rcp weight
+##or load in pre-created data
+# X <- raster("./inputs/RasterTemplate.tif")
+# cw_table <- fread("./inputs/BurnCrosswalk.csv")
+
+##gcm and rcp weighting. weight list in order of variable list
 gcm_weight <- data.table(gcm = c("ACCESS-ESM1-5", "BCC-CSM2-MR", "CanESM5", "CNRM-ESM2-1", "EC-Earth3",
                                  "GFDL-ESM4", "GISS-E2-1-G", "INM-CM5-0", "IPSL-CM6A-LR", "MIROC6",
                                  "MPI-ESM1-2-HR", "MRI-ESM2-0", "UKESM1-0-LL"),
-                         weight = c(0,0,0,1,1,0,0,0,0,0,0,1,0))
-#weight = c(1,1,0,0,1,1,1,0,1,1,1,1,0))
+                         # weight = c(0,0,0,1,1,0,0,0,0,0,0,1,0))
+weight = c(1,1,0,1,1,1,1,0,1,1,1,1,0)) ### this is default set of model weights used in CCISS tool
 rcp_weight <- data.table(rcp = c("ssp126","ssp245","ssp370","ssp585"),
-                         weight = c(0,1,1,0))
+                         weight = c(0.8,1,0.8,0)) ## this is default weighting used in CCISS tool
 
 all_weight <- as.data.table(expand.grid(gcm = gcm_weight$gcm,rcp = rcp_weight$rcp))
 all_weight[gcm_weight,wgcm := i.weight, on = "gcm"]
@@ -102,11 +112,12 @@ all_weight[rcp_weight,wrcp := i.weight, on = "rcp"]
 all_weight[,weight := wgcm*wrcp]
 modWeights <- all_weight
 
-dat <- dbGetCCISS(con, cw_table$SiteNo, avg = F, modWeights = all_weight)
+dat <- dbGetCCISS(con, cw_table$SiteNo, avg = F, modWeights = all_weight) ##takes about 1 min
 dat[,SiteRef := as.integer(SiteRef)]
-timeperiods <- c("1961","2041","2081")
+## choose time periods (1961, and 1991 are 30-year periods, 2021 and on are the starting year of 20 year-periods), edatopic positions and species to use
+timeperiods <- c("1961","2041","2081") ##"1991", "2021", "2061"
 edaPos <- c("B2", "C4", "D6")
-species <- c("Fd", "Sx", "Pl", "Bl", "Py", "Lw", "At")
+species <- c("Fd", "Sx", "Pl", "Bl", "Py", "Lw", "At") # These are BC forest service codes for species. See spreadsheet for interpretation and other codes
 
 for(tp in timeperiods){
   datTP <- dat[FuturePeriod == tp,]
@@ -118,7 +129,7 @@ for(tp in timeperiods){
     edaZonal <- edaTemp[(HasPos),]
     edaZonal[,HasPos := NULL]
     ##edatopic overlap
-    SSPreds <- edatopicOverlap(datTP,edaZonal,E1_Phase,onlyRegular = TRUE) ##takes about 30 seconds
+    SSPreds <- edatopicOverlap(datTP,edaZonal,E1_Phase,onlyRegular = TRUE) ##takes about 30 seconds to create the Site series equivalents to use.
     ##loop through species
     for(spp in species){
       sppFeas <- ccissMap(SSPreds,S1,spp) ##~ 15 seconds
@@ -128,6 +139,7 @@ for(tp in timeperiods){
       sppFeas <- sppFeas[,.(RastID,NewSuit)]
       X <- raster::setValues(X,NA)
       X[sppFeas$RastID] <- sppFeas$NewSuit
+      ### output feasibility raster file for each species-edatopic combination in list. This will be the feasibility averaged across all model-scenarios weighted as above.
       writeRaster(X, filename = paste("./ReburnBC_Maps/CCISSFeas",tp,eda,spp,".tif",sep = "_"),format = "GTiff", overwrite = T)
       # X2 <- ratify(X)
       # rat <- as.data.table(levels(X2)[[1]])
